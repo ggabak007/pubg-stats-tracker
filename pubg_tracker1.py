@@ -10,7 +10,6 @@ import threading
 
 # ================= [ 사용자 설정 정보 ] =================
 API_KEY = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJqdGkiOiJiZjBiMjBjMC00M2UwLTAxM2YtZjM4MC0yNjA4ZjgwMTViOTQiLCJpc3MiOiJnYW1lbG9ja2VyIiwiaWF0IjoxNzgwNzU1NjA4LCJwdWIiOiJibHVlaG9sZSIsInRpdGxlIjoicHViZyIsImFwcCI6Ii1iNmM3ZjBlMy04NjlmLTQ3MTEtYjMxNC0zMTJjNzAyYWIyOTcifQ.2f-XPWLbZ5nMRVbg_SR4frNpTkJ-YQxTOBmM6Bnj24o"
-# 🎯 ACCOUNT_ID와 PLAYER_NAME은 이제 상단 입력창에서 실시간으로 가져옵니다!
 # =======================================================
 
 HEADERS = {
@@ -22,7 +21,7 @@ class PUBGTrackerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("배틀그라운드 경쟁전 멀티 닉네임 검색 트래커")
-        self.root.geometry("750x720") # 입력창 공간 확보를 위해 세로 확장
+        self.root.geometry("750x720")
         self.root.resizable(False, False)
         
         self.seasons_dict = {}
@@ -33,14 +32,14 @@ class PUBGTrackerApp:
         self.load_seasons()
 
     def init_ui(self):
-        # 1. 최상단 닉네임 검색 바 추가
+        # 1. 최상단 닉네임 검색 바
         search_frame = tk.Frame(self.root)
         search_frame.pack(fill="x", padx=20, pady=12)
         
         tk.Label(search_frame, text="배그 인게임 닉네임:", font=("맑은 고딕", 11, "bold"), fg="#2c3e50").pack(side="left")
         self.name_entry = tk.Entry(search_frame, font=("맑은 고딕", 11), width=20)
         self.name_entry.pack(side="left", padx=10)
-        self.name_entry.insert(0, "BP2_GGABAK") # 기본 예시값 세팅
+        self.name_entry.insert(0, "ggabak007_") # 디버깅에서 확인된 실제 정확한 닉네임 세팅
         
         # 2. 시즌 선택 및 컨트롤 바
         top_frame = tk.Frame(self.root)
@@ -87,7 +86,7 @@ class PUBGTrackerApp:
             self.labels[key] = lbl_val
 
         # 4. 하단 최근 매치 기록 리스트 뷰
-        self.list_title_frame = tk.LabelFrame(self.root, text=" 최근 게임 실시간 기록 (저장 안 됨) ", font=("맑은 고딕", 11, "bold"), padx=10, pady=10)
+        self.list_title_frame = tk.LabelFrame(self.root, text=" 최근 경쟁전 실시간 기록 ", font=("맑은 고딕", 11, "bold"), padx=10, pady=10)
         self.list_title_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
         columns = ("매치일시", "순위", "킬", "어시스트", "데미지", "매치ID")
@@ -104,21 +103,20 @@ class PUBGTrackerApp:
             self.tree.column(col, width=widths[col], anchor="center")
 
     def get_account_id_by_name(self, player_name):
-        """ 🎯 입력된 닉네임 문자열로 배그 API를 찔러 고유 Account ID를 동적으로 찾아옵니다. """
-        url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={player_name}"
+        url = f"https://api.pubg.com/shards/steam/players?filter[playerNames]={player_name.strip()}"
         try:
             res = requests.get(url, headers=HEADERS)
             if res.status_code == 200:
                 data = res.json().get('data', [])
                 if data:
                     self.current_account_id = data[0]['id']
-                    self.current_player_name = data[0]['attributes']['name'] # 대소문자 검증용 정확한 이름 보관
+                    self.current_player_name = data[0]['attributes']['name']
                     return True
             elif res.status_code == 404:
-                messagebox.showerror("검색 실패", "해당 닉네임의 유저를 찾을 수 없습니다.\n스팀 배틀그라운드 닉네임이 정확한지 대소문자를 확인해 주세요.")
+                messagebox.showerror("검색 실패", "해당 닉네임의 유저를 찾을 수 없습니다.\n대소문자를 확인해 주세요.")
                 return False
         except Exception as e:
-            messagebox.showerror("오류", f"유저 고유 ID 조회 중 통신 에러 발생:\n{e}")
+            messagebox.showerror("오류", f"유저 조회 실패: {e}")
         return False
 
     def load_seasons(self):
@@ -168,7 +166,6 @@ class PUBGTrackerApp:
         
         self.root.config(cursor="watch")
         
-        # 실시간 고유 ID 검색 연동 파이프라인 작동
         if not self.get_account_id_by_name(input_name):
             self.root.config(cursor="")
             return
@@ -178,11 +175,19 @@ class PUBGTrackerApp:
         try:
             res = requests.get(url, headers=HEADERS)
             if res.status_code == 200:
-                data = res.json()['data']['attributes']['rankedGameModeStats']
-                mode = 'squad' if 'squad' in data else ('squad-fpp' if 'squad-fpp' in data else None)
+                data = res.json().get('data', {}).get('attributes', {}).get('rankedGameModeStats', {})
                 
-                if mode and data[mode]['roundsPlayed'] > 0:
-                    stats = data[mode]
+                # 가장 판수가 많은 경쟁전 모드 선택
+                target_mode = None
+                max_rounds = 0
+                for mode_key, mode_data in data.items():
+                    rounds = mode_data.get('roundsPlayed', 0)
+                    if rounds > max_rounds:
+                        max_rounds = rounds
+                        target_mode = mode_key
+                
+                if target_mode and max_rounds > 0:
+                    stats = data[target_mode]
                     games = stats['roundsPlayed']
                     deaths = stats['deaths'] if stats['deaths'] > 0 else 1
                     
@@ -212,7 +217,6 @@ class PUBGTrackerApp:
                     self.labels["치킨 확률 (승률)"].config(text=f"{win_ratio}%")
                     self.labels["평균 순위"].config(text=f"#{avg_rank}")
                     
-                    # 🎯 엑셀 파일이 검색한 유저별로 각각 별도 저장되도록 조치했습니다.
                     summary_file = f"pubg_{self.current_player_name}_summary.xlsx"
                     new_sum = {
                         "시즌": selected_name, "시즌ID": season_id, "티어": tier_str, 
@@ -233,9 +237,9 @@ class PUBGTrackerApp:
                     df.to_excel(summary_file, index=False)
                     messagebox.showinfo("성공", f"[{self.current_player_name}] 님의 전적 수집 및 엑셀 저장 완료!")
                 else:
-                    messagebox.showwarning("알림", "해당 유저는 해당 시즌의 경쟁전 기록이 없습니다.")
+                    messagebox.showwarning("알림", "선택한 시즌에 경쟁전 플레이 기록이 없습니다.")
             elif res.status_code == 429:
-                messagebox.showerror("제한", "API 요청 제한에 걸렸습니다. 잠시 후 다시 시도해 주세요.")
+                messagebox.showerror("제한", "API 요청 제한(1분 10회)에 걸렸습니다.")
             else:
                 messagebox.showerror("오류", f"에러 발생 (코드: {res.status_code})")
         except Exception as e:
@@ -250,17 +254,18 @@ class PUBGTrackerApp:
             return
             
         self.recent_btn.config(state="disabled", text="조회 중...⏳")
-        self.list_title_frame.config(text=f" [{input_name}] 님의 최근 매치 추적 조회 중... ")
+        self.list_title_frame.config(text=f" [{input_name}] 님의 최근 경쟁전 매치 탐색 중... ")
         
         t = threading.Thread(target=self.fetch_recent_matches_live, args=(input_name,))
         t.daemon = True
         t.start()
 
     def fetch_recent_matches_live(self, player_name):
+        # 1. 기존 표 내용 초기화
         for item in self.tree.get_children():
             self.tree.delete(item)
             
-        # 실시간 고유 ID 검색 연동 파이프라인 작동
+        # 닉네임 기반 고유 ID 동적 조회
         if not self.get_account_id_by_name(player_name):
             self.reset_recent_btn()
             return
@@ -270,7 +275,7 @@ class PUBGTrackerApp:
         try:
             res = requests.get(player_url, headers=HEADERS)
             if res.status_code != 200:
-                if res.status_code == 429: messagebox.showerror("제한", "1분 제한에 걸렸습니다. 잠시 후 시도하세요.")
+                if res.status_code == 429: messagebox.showerror("제한", "1분 API 제한에 걸렸습니다. 잠시 후 다시 시도하세요.")
                 else: messagebox.showerror("오류", f"플레이어 매치 목록 조회 실패: {res.status_code}")
                 return
             
@@ -282,13 +287,17 @@ class PUBGTrackerApp:
                 return
             
             match_ids = [m['id'] for m in matches_list]
-            match_ids.reverse()
             
             parsed_count = 0
-            for m_id in match_ids[:20]: 
+            # 🎯 최근 매치 중 6경기를 타겟으로 가져옵니다.
+            for m_id in match_ids: 
+                if parsed_count >= 6:
+                    break
+                    
                 match_url = f"https://api.pubg.com/shards/steam/matches/{m_id}"
                 m_res = requests.get(match_url, headers=HEADERS)
                 
+                # API 연타(429) 예외 처리 및 대기
                 if m_res.status_code == 429:
                     time.sleep(2)
                     m_res = requests.get(match_url, headers=HEADERS)
@@ -297,6 +306,7 @@ class PUBGTrackerApp:
                     m_json = m_res.json()
                     included = m_json.get('included', [])
                     
+                    # 경기 생성 일시 파싱
                     m_time_raw = m_json['data']['attributes']['createdAt']
                     dt = datetime.strptime(m_time_raw, "%Y-%m-%dT%H:%M:%SZ")
                     m_time_str = dt.strftime("%Y-%m-%d %H:%M")
@@ -304,18 +314,22 @@ class PUBGTrackerApp:
                     player_stats = None
                     roster_id = None
                     
+                    # 🎯 participant 패킷에서 내 닉네임(or Account ID) 매칭
                     for item in included:
                         if item.get('type') == 'participant':
                             attrs = item.get('attributes', {})
-                            p_name = attrs.get('stats', {}).get('name', '')
+                            p_stats = attrs.get('stats', {})
+                            p_name = p_stats.get('name', '')
+                            p_id = p_stats.get('playerId', '')
                             
-                            # 실시간으로 탐색 완료된 정규 닉네임으로 본인 데이터 조각 서칭
-                            if p_name.strip().lower() == self.current_player_name.strip().lower():
-                                player_stats = attrs.get('stats', {})
+                            if (p_name and p_name.strip().lower() == self.current_player_name.strip().lower()) or \
+                               (p_id and p_id == self.current_account_id):
+                                player_stats = p_stats
                                 rels = item.get('relationships', {})
                                 roster_id = rels.get('roster', {}).get('data', {}).get('id')
                                 break
                     
+                    # 🎯 roster 패킷에서 팀 최종 순위 매칭
                     if player_stats and roster_id:
                         rank = 99
                         for item in included:
@@ -323,22 +337,23 @@ class PUBGTrackerApp:
                                 rank = item.get('attributes', {}).get('stats', {}).get('rank', 99)
                                 break
                         
+                        # Tkinter 하단 Treeview 표에 실시간 한 줄씩 데이터 삽입!
                         self.tree.insert("", "end", values=(
                             m_time_str, 
                             f"#{rank}", 
                             player_stats.get('kills', 0), 
                             player_stats.get('assists', 0), 
-                            round(player_stats.get('damageDealt', 0)), 
+                            round(player_stats.get('damageDealt', 0), 1), 
                             m_id
                         ))
                         parsed_count += 1
                         
-                    time.sleep(0.2)
+                    time.sleep(0.15) # API 요청 안정화 딜레이
                 elif m_res.status_code == 429:
                     break
             
             if parsed_count == 0:
-                messagebox.showinfo("안내", "최근 플레이한 경기의 상세 데이터 로드 조건에 일치하는 건이 없습니다.")
+                messagebox.showinfo("안내", "최근 매치 데이터를 가져오지 못했습니다.")
                 
         except Exception:
             messagebox.showerror("오류", traceback.format_exc())
@@ -347,7 +362,7 @@ class PUBGTrackerApp:
 
     def reset_recent_btn(self):
         self.recent_btn.config(state="normal", text="최근 게임 실시간 조회")
-        self.list_title_frame.config(text=" 최근 게임 실시간 기록 (저장 안 됨) ")
+        self.list_title_frame.config(text=" 최근 경쟁전 실시간 기록 ")
 
 if __name__ == "__main__":
     root = tk.Tk()
