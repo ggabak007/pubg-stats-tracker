@@ -12,7 +12,7 @@ HEADERS = {
     "Accept": "application/vnd.api+json"
 }
 
-def get_recent_6_matches():
+def get_recent_10_matches():
     # 1. 플레이어의 최근 매치 ID 목록 가져오기
     player_url = f"https://api.pubg.com/shards/steam/players/{ACCOUNT_ID}"
     res = requests.get(player_url, headers=HEADERS)
@@ -84,9 +84,9 @@ def get_recent_6_matches():
                 print(f"✅ [{len(games_collection)}/6] {m_id[:8]}... 매치 파싱 완료")
 
     # 3. 완성된 6게임 데이터 출력
-    print("\n================ [ 최종 6게임 데이터 집합 ] ================")
+    print("\n================ [ 최종 10게임 데이터 집합 ] ================")
     print(json.dumps(games_collection, indent=4, ensure_ascii=False))
     print("===========================================================")
 
 if __name__ == "__main__":
-    get_recent_6_matches()
+    get_recent_10_matches()

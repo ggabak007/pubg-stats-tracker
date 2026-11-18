@@ -261,11 +261,9 @@ class PUBGTrackerApp:
         t.start()
 
     def fetch_recent_matches_live(self, player_name):
-        # 1. 기존 표 내용 초기화
         for item in self.tree.get_children():
             self.tree.delete(item)
             
-        # 닉네임 기반 고유 ID 동적 조회
         if not self.get_account_id_by_name(player_name):
             self.reset_recent_btn()
             return
@@ -275,7 +273,7 @@ class PUBGTrackerApp:
         try:
             res = requests.get(player_url, headers=HEADERS)
             if res.status_code != 200:
-                if res.status_code == 429: messagebox.showerror("제한", "1분 API 제한에 걸렸습니다. 잠시 후 다시 시도하세요.")
+                if res.status_code == 429: messagebox.showerror("제한", "1분 제한에 걸렸습니다. 잠시 후 시도하세요.")
                 else: messagebox.showerror("오류", f"플레이어 매치 목록 조회 실패: {res.status_code}")
                 return
             
@@ -286,18 +284,18 @@ class PUBGTrackerApp:
                 messagebox.showinfo("알림", "최근 플레이한 매치 기록이 전혀 없습니다.")
                 return
             
+            # 최신 매치가 맨 앞에 있으므로 그대로 사용
             match_ids = [m['id'] for m in matches_list]
             
             parsed_count = 0
-            # 🎯 최근 매치 중 6경기를 타겟으로 가져옵니다.
-            for m_id in match_ids: 
-                if parsed_count >= 6:
+            for m_id in match_ids:
+                # 🎯 최근 10게임이 수집되면 반복 중단
+                if parsed_count >= 8:
                     break
                     
                 match_url = f"https://api.pubg.com/shards/steam/matches/{m_id}"
                 m_res = requests.get(match_url, headers=HEADERS)
                 
-                # API 연타(429) 예외 처리 및 대기
                 if m_res.status_code == 429:
                     time.sleep(2)
                     m_res = requests.get(match_url, headers=HEADERS)
@@ -306,7 +304,6 @@ class PUBGTrackerApp:
                     m_json = m_res.json()
                     included = m_json.get('included', [])
                     
-                    # 경기 생성 일시 파싱
                     m_time_raw = m_json['data']['attributes']['createdAt']
                     dt = datetime.strptime(m_time_raw, "%Y-%m-%dT%H:%M:%SZ")
                     m_time_str = dt.strftime("%Y-%m-%d %H:%M")
@@ -314,7 +311,6 @@ class PUBGTrackerApp:
                     player_stats = None
                     roster_id = None
                     
-                    # 🎯 participant 패킷에서 내 닉네임(or Account ID) 매칭
                     for item in included:
                         if item.get('type') == 'participant':
                             attrs = item.get('attributes', {})
@@ -329,7 +325,6 @@ class PUBGTrackerApp:
                                 roster_id = rels.get('roster', {}).get('data', {}).get('id')
                                 break
                     
-                    # 🎯 roster 패킷에서 팀 최종 순위 매칭
                     if player_stats and roster_id:
                         rank = 99
                         for item in included:
@@ -337,23 +332,22 @@ class PUBGTrackerApp:
                                 rank = item.get('attributes', {}).get('stats', {}).get('rank', 99)
                                 break
                         
-                        # Tkinter 하단 Treeview 표에 실시간 한 줄씩 데이터 삽입!
                         self.tree.insert("", "end", values=(
                             m_time_str, 
                             f"#{rank}", 
                             player_stats.get('kills', 0), 
                             player_stats.get('assists', 0), 
-                            round(player_stats.get('damageDealt', 0), 1), 
+                            round(player_stats.get('damageDealt', 0)), 
                             m_id
                         ))
                         parsed_count += 1
                         
-                    time.sleep(0.15) # API 요청 안정화 딜레이
+                    time.sleep(0.15)
                 elif m_res.status_code == 429:
                     break
             
             if parsed_count == 0:
-                messagebox.showinfo("안내", "최근 매치 데이터를 가져오지 못했습니다.")
+                messagebox.showinfo("안내", "최근 플레이한 경기의 상세 데이터 로드 조건에 일치하는 건이 없습니다.")
                 
         except Exception:
             messagebox.showerror("오류", traceback.format_exc())
